@@ -1,6 +1,5 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
-import { TechPackData } from "../types";
+import { TechPackData } from "./types";
 
 /**
  * DIRECT AI ANALYSIS SERVICE
@@ -67,12 +66,14 @@ export const analyzeGarmentImage = async (base64Image: string): Promise<Partial<
       }
     });
 
-    const data = JSON.parse(response.text || '{}');
+    // Use .text property to get the generated string
+    const jsonStr = response.text || '{}';
+    const result = JSON.parse(jsonStr);
     
     return {
-      header: { ...data.header },
-      specs: { ...data.specs },
-      measurements: data.suggestedMeasurements?.map((m: any, index: number) => ({
+      header: { ...result.header },
+      specs: { ...result.specs },
+      measurements: result.suggestedMeasurements?.map((m: any, index: number) => ({
           id: `ai-${Date.now()}-${index}`,
           code: m.code || '',
           labelEs: m.code || 'Measurement',
