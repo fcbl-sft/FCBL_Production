@@ -312,7 +312,6 @@ const PPMeetingComponent: React.FC<PPMeetingProps> = ({ project, onUpdate, onBac
         </div>
       </header>
 
-      {/* SAVE TOAST */}
       {showSaveToast && (
         <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-green-600 text-white px-8 py-4 rounded-2xl shadow-2xl font-black uppercase tracking-widest text-xs z-[100] animate-bounce flex items-center gap-3">
           <CheckCircle2 className="w-5 h-5" /> Saved Successfully
@@ -544,7 +543,11 @@ const PPMeetingComponent: React.FC<PPMeetingProps> = ({ project, onUpdate, onBac
                                         <Paperclip className="w-4 h-4 text-indigo-500" /> Reference Files
                                     </h4>
                                     <button 
-                                        onClick={() => setActiveAttachmentTarget({ type: 'GLOBAL_PP', meetingId: activeMeetingId })}
+                                        onClick={() => {
+                                          if (activeMeetingId) {
+                                            setActiveAttachmentTarget({ type: 'GLOBAL_PP', meetingId: activeMeetingId });
+                                          }
+                                        }}
                                         className="p-2 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 transition-all"
                                     >
                                         <Upload className="w-4 h-4" />
@@ -564,7 +567,11 @@ const PPMeetingComponent: React.FC<PPMeetingProps> = ({ project, onUpdate, onBac
                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button onClick={() => window.open(att.fileUrl)} className="p-2 text-indigo-600 hover:bg-white rounded-xl transition-all" title="Preview"><ExternalLink className="w-4 h-4"/></button>
                                                 <a href={att.fileUrl} download={att.fileName} className="p-2 text-emerald-600 hover:bg-white rounded-xl transition-all" title="Download"><Download className="w-4 h-4" /></a>
-                                                <button onClick={() => deleteAttachment({ type: 'GLOBAL_PP', meetingId: activeMeetingId }, att.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                                                <button onClick={() => {
+                                                  if (activeMeetingId) {
+                                                    deleteAttachment({ type: 'GLOBAL_PP', meetingId: activeMeetingId }, att.id);
+                                                  }
+                                                }} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Delete"><Trash2 className="w-4 h-4" /></button>
                                             </div>
                                         </div>
                                     ))}
