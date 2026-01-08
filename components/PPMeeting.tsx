@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { Project, PPMeeting, ProductionDetail, Milestone, Approval, FileAttachment, Comment } from '../types';
 import { ArrowLeft, Users, Calendar, Plus, Trash2, ClipboardList, Timer, CheckCircle, Save, X, Eye, MessageSquare, Camera, Upload, FileDown, Paperclip, FileText, Download, ExternalLink, Printer, CheckCircle2, Edit3, UserCircle } from 'lucide-react';
