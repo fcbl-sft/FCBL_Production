@@ -1,17 +1,17 @@
 
 import React, { useState, useEffect } from 'react';
-import LoginScreen from './components/LoginScreen';
-import Dashboard from './components/Dashboard';
-import TechPackEditor from './components/TechPackEditor';
-import InspectionEditor from './components/InspectionEditor';
-import MaterialControl from './components/MaterialControl';
-import PPMeeting from './components/PPMeeting';
-import InvoiceEditor from './components/InvoiceEditor';
-import PackingEditor from './components/PackingEditor';
-import OrderSheetEditor from './components/OrderSheetEditor';
-import { Project, UserRole, Inspection, PPMeeting as PPMeetingType, MaterialControlItem, PONumber, Invoice, PackingInfo, TechPackData, OrderSheet } from './types';
-import { INITIAL_DATA } from './constants';
-import { supabase } from './lib/supabase';
+import LoginScreen from './LoginScreen';
+import Dashboard from './Dashboard';
+import TechPackEditor from './TechPackEditor';
+import InspectionEditor from './InspectionEditor';
+import MaterialControl from './MaterialControl';
+import PPMeeting from './PPMeeting';
+import InvoiceEditor from './InvoiceEditor';
+import PackingEditor from './PackingEditor';
+import OrderSheetEditor from './OrderSheetEditor';
+import { Project, UserRole, Inspection, PPMeeting as PPMeetingType, MaterialControlItem, PONumber, Invoice, PackingInfo, TechPackData, OrderSheet, ProjectStatus, Comment } from '../types';
+import { INITIAL_DATA } from '../constants';
+import { supabase } from '../lib/supabase';
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<'login' | 'dashboard' | 'editor' | 'inspection' | 'materialControl' | 'ppMeeting' | 'invoice' | 'packing' | 'orderSheet'>('login');
@@ -25,8 +25,8 @@ const App: React.FC = () => {
   const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
 
   const activeProject = projects.find(p => p.id === activeProjectId);
-  const activeInspection = activeProject?.inspections.find(i => i.id === activeInspectionId);
-  const activeInvoice = activeProject?.invoices?.find(i => i.id === activeInvoiceId);
+  const activeInspection = activeProject?.inspections.find((i: Inspection) => i.id === activeInspectionId);
+  const activeInvoice = activeProject?.invoices?.find((i: Invoice) => i.id === activeInvoiceId);
 
   const mapToDB = (proj: Partial<Project>) => {
     const dbObj: any = {};
@@ -163,9 +163,9 @@ const App: React.FC = () => {
   const handleUpdateInspection = async (updatedInspection: Inspection) => {
     if (!activeProject) return;
     setActiveInspectionId(updatedInspection.id);
-    const exists = activeProject.inspections.some(i => i.id === updatedInspection.id);
+    const exists = activeProject.inspections.some((i: Inspection) => i.id === updatedInspection.id);
     const updatedInspections = exists 
-      ? activeProject.inspections.map(i => i.id === updatedInspection.id ? updatedInspection : i)
+      ? activeProject.inspections.map((i: Inspection) => i.id === updatedInspection.id ? updatedInspection : i)
       : [...activeProject.inspections, updatedInspection];
     await updateProjectInDB(activeProject.id, { inspections: updatedInspections });
   };
@@ -233,7 +233,7 @@ const App: React.FC = () => {
 
   const handleDeleteInspection = async (id: string) => {
       if (!activeProject) return;
-      const updatedIns = activeProject.inspections.filter(i => i.id !== id);
+      const updatedIns = activeProject.inspections.filter((i: Inspection) => i.id !== id);
       await updateProjectInDB(activeProject.id, { inspections: updatedIns });
       if (activeInspectionId === id) {
           setActiveInspectionId(updatedIns[0]?.id || null);
@@ -319,9 +319,9 @@ const App: React.FC = () => {
         <Dashboard 
           role={currentUserRole!} 
           projects={projects} 
-          onSelectProject={(p) => { setActiveProjectId(p.id); setCurrentScreen('editor'); }} 
+          onSelectProject={(p: Project) => { setActiveProjectId(p.id); setCurrentScreen('editor'); }} 
           onCreateTechPack={handleCreateTechPack} 
-          onUploadTechPack={async (file) => {
+          onUploadTechPack={async (file: File) => {
              const fileUrl = URL.createObjectURL(file);
              const newProj: Project = {
                 id: `proj-${Date.now()}`,
@@ -348,14 +348,14 @@ const App: React.FC = () => {
              } catch (err: any) { console.error(err); }
           }}
           onLogout={handleLogout} 
-          onDeleteProject={async (id) => { if(confirm("Delete Style?")) { await supabase.from('projects').delete().eq('id', id); setProjects(p => p.filter(x => x.id !== id)); } }}
-          onRenameProject={(id, title) => updateProjectInDB(id, { title })}
+          onDeleteProject={async (id: string) => { if(confirm("Delete Style?")) { await supabase.from('projects').delete().eq('id', id); setProjects(p => p.filter(x => x.id !== id)); } }}
+          onRenameProject={(id: string, title: string) => updateProjectInDB(id, { title })}
           onManageInspection={handleManageInspection}
           onManageInvoice={handleManageInvoice}
           onManagePacking={handleManagePacking}
           onManageOrderSheet={handleManageOrderSheet}
-          onManageMaterialControl={(p) => { setActiveProjectId(p.id); setCurrentScreen('materialControl'); }}
-          onManagePPMeeting={(p) => { setActiveProjectId(p.id); setCurrentScreen('ppMeeting'); }}
+          onManageMaterialControl={(p: Project) => { setActiveProjectId(p.id); setCurrentScreen('materialControl'); }}
+          onManagePPMeeting={(p: Project) => { setActiveProjectId(p.id); setCurrentScreen('ppMeeting'); }}
           onUpdateProject={updateProjectInDB}
         />
       )}
@@ -363,11 +363,11 @@ const App: React.FC = () => {
       {currentScreen === 'editor' && activeProject && (
         <TechPackEditor 
           project={activeProject} 
-          onUpdateProject={(p) => updateProjectInDB(p.id, p)}
+          onUpdateProject={(p: Project) => updateProjectInDB(p.id, p)}
           onBack={() => setCurrentScreen('dashboard')} 
           currentUserRole={currentUserRole!}
-          onStatusChange={(s) => updateProjectInDB(activeProject.id, { status: s })} 
-          onAddComment={(txt) => {
+          onStatusChange={(s: ProjectStatus) => updateProjectInDB(activeProject.id, { status: s })} 
+          onAddComment={(txt: string) => {
              const newComment = { id: Date.now().toString(), author: 'User', role: currentUserRole!, text: txt, timestamp: new Date().toISOString() };
              updateProjectInDB(activeProject.id, { comments: [...(activeProject.comments || []), newComment] });
           }}
@@ -377,7 +377,7 @@ const App: React.FC = () => {
       {currentScreen === 'orderSheet' && activeProject && (
         <OrderSheetEditor 
           project={activeProject}
-          onUpdate={(orderSheet) => updateProjectInDB(activeProject.id, { orderSheet })}
+          onUpdate={(orderSheet: OrderSheet) => updateProjectInDB(activeProject.id, { orderSheet })}
           onBack={() => setCurrentScreen('dashboard')}
           onSave={() => setCurrentScreen('dashboard')}
         />
@@ -387,8 +387,8 @@ const App: React.FC = () => {
         <InvoiceEditor 
             project={activeProject} 
             invoice={activeInvoice} 
-            onUpdate={(inv) => {
-                const updated = activeProject.invoices.map(i => i.id === inv.id ? inv : i);
+            onUpdate={(inv: Invoice) => {
+                const updated = activeProject.invoices.map((i: Invoice) => i.id === inv.id ? inv : i);
                 updateProjectInDB(activeProject.id, { invoices: updated });
             }} 
             onBack={() => setCurrentScreen('dashboard')} 
@@ -399,7 +399,7 @@ const App: React.FC = () => {
       {currentScreen === 'packing' && activeProject && (
           <PackingEditor 
             project={activeProject}
-            onUpdate={(packing) => updateProjectInDB(activeProject.id, { packing })}
+            onUpdate={(packing: PackingInfo) => updateProjectInDB(activeProject.id, { packing })}
             onBack={() => setCurrentScreen('dashboard')}
             onSave={() => setCurrentScreen('dashboard')}
           />
@@ -419,8 +419,8 @@ const App: React.FC = () => {
       {currentScreen === 'materialControl' && activeProject && (
         <MaterialControl 
           project={activeProject}
-          onUpdateProject={(updates) => updateProjectInDB(activeProject.id, updates)}
-          onUpdate={(items) => updateProjectInDB(activeProject.id, { materialControl: items })}
+          onUpdateProject={(updates: Partial<Project>) => updateProjectInDB(activeProject.id, updates)}
+          onUpdate={(items: MaterialControlItem[]) => updateProjectInDB(activeProject.id, { materialControl: items })}
           onBack={() => setCurrentScreen('dashboard')}
         />
       )}
@@ -428,7 +428,7 @@ const App: React.FC = () => {
       {currentScreen === 'ppMeeting' && activeProject && (
         <PPMeeting 
           project={activeProject}
-          onUpdate={(meetings) => updateProjectInDB(activeProject.id, { ppMeetings: meetings })}
+          onUpdate={(meetings: PPMeetingType[]) => updateProjectInDB(activeProject.id, { ppMeetings: meetings })}
           onBack={() => setCurrentScreen('dashboard')}
         />
       )}
