@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useMemo } from 'react';
 import { Project, MaterialControlItem, MaterialAttachment, Comment, FileAttachment } from '../types';
 // Fix: Added missing MessageSquare and Upload icons to the imports from lucide-react
@@ -21,7 +20,7 @@ const MaterialControl: React.FC<MaterialControlProps> = ({ project, onUpdateProj
   const [showPreview, setShowPreview] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('ALL');
-  const [showSaveToast, setShowSaveToast] = useState(false);
+  const [showSaveToast, setshowSaveToast] = useState(false);
   
   const [activeAttachmentRow, setActiveAttachmentRow] = useState<string | null>(null);
   const [activeGlobalAttachment, setActiveGlobalAttachment] = useState(false);
@@ -44,19 +43,32 @@ const MaterialControl: React.FC<MaterialControlProps> = ({ project, onUpdateProj
       actualQuality: '',
       receivedQuality: '',
       remark: '',
-      attachments: []
+      attachments: [],
+      acceptance: '',
+      acceptanceDate: '',
+      maturityDate: ''
     };
     onUpdate([...items, newItem]);
   };
 
   const updateItemField = (id: string, field: keyof MaterialControlItem, value: any) => {
-    const updated = items.map(item => item.id === id ? { ...item, [field]: value } : item);
+    const updated = items.map(item => {
+      if (item.id === id) {
+        const updatedItem = { ...item, [field]: value };
+        // Reset acceptanceDate if acceptance is changed from Yes
+        if (field === 'acceptance' && value !== 'Yes') {
+          updatedItem.acceptanceDate = '';
+        }
+        return updatedItem;
+      }
+      return item;
+    });
     onUpdate(updated);
   };
 
   const handleSave = () => {
-    setShowSaveToast(true);
-    setTimeout(() => setShowSaveToast(false), 3000);
+    setshowSaveToast(true);
+    setTimeout(() => setshowSaveToast(false), 3000);
   };
 
   const handlePrint = () => {
@@ -170,7 +182,8 @@ const MaterialControl: React.FC<MaterialControlProps> = ({ project, onUpdateProj
   React.useEffect(() => {
     if (items.length === 0) {
       const defaults = ["Yarn composition", "Count", "Color", "Strength"];
-      const initialItems = defaults.map(d => ({
+      // Fixed: Added explicit type annotation to initialItems to fix literal inference issue with acceptance property
+      const initialItems: MaterialControlItem[] = defaults.map(d => ({
         id: `MQ-${Date.now()}-${d.replace(/\s/g, '-')}`,
         label: d,
         orderQty: 0,
@@ -182,7 +195,10 @@ const MaterialControl: React.FC<MaterialControlProps> = ({ project, onUpdateProj
         actualQuality: '',
         receivedQuality: '',
         remark: '',
-        attachments: []
+        attachments: [],
+        acceptance: '',
+        acceptanceDate: '',
+        maturityDate: ''
       }));
       onUpdate(initialItems);
     }
@@ -378,6 +394,9 @@ const MaterialControl: React.FC<MaterialControlProps> = ({ project, onUpdateProj
                                 <th className={tableHeaderClass}>Received Qty</th>
                                 <th className={tableHeaderClass}>Total Weight</th>
                                 <th className={tableHeaderClass}>Balance</th>
+                                <th className={tableHeaderClass}>Acceptance</th>
+                                <th className={tableHeaderClass}>Acceptance Date</th>
+                                <th className={tableHeaderClass}>Maturity Date</th>
                                 <th className={tableHeaderClass}>Deadline Date</th>
                                 <th className={tableHeaderClass}>Received Date</th>
                                 <th className={tableHeaderClass}>Actual Quality</th>
@@ -408,6 +427,29 @@ const MaterialControl: React.FC<MaterialControlProps> = ({ project, onUpdateProj
                                     </td>
                                     <td className={`p-2 border-r border-gray-50 text-[11px] font-black text-center ${balance > 0 ? 'text-orange-500' : balance < 0 ? 'text-red-600' : 'text-green-600'}`}>
                                         {balance}
+                                    </td>
+                                    <td className="p-0 border-r border-gray-50">
+                                        <select 
+                                          className={cellInputClass} 
+                                          value={item.acceptance || ''} 
+                                          onChange={e => updateItemField(item.id, 'acceptance', e.target.value)}
+                                        >
+                                          <option value="">- Select -</option>
+                                          <option value="Yes">Yes</option>
+                                          <option value="No">No</option>
+                                        </select>
+                                    </td>
+                                    <td className="p-0 border-r border-gray-50">
+                                        <input 
+                                          type="date" 
+                                          className={`${cellInputClass} ${item.acceptance !== 'Yes' ? 'opacity-50 cursor-not-allowed bg-gray-100' : ''}`} 
+                                          value={item.acceptanceDate || ''} 
+                                          onChange={e => updateItemField(item.id, 'acceptanceDate', e.target.value)}
+                                          disabled={item.acceptance !== 'Yes'}
+                                        />
+                                    </td>
+                                    <td className="p-0 border-r border-gray-50">
+                                        <input type="date" className={cellInputClass} value={item.maturityDate || ''} onChange={e => updateItemField(item.id, 'maturityDate', e.target.value)} />
                                     </td>
                                     <td className="p-0 border-r border-gray-50">
                                         <input type="date" className={cellInputClass} value={item.deadline} onChange={e => updateItemField(item.id, 'deadline', e.target.value)} />
@@ -648,6 +690,9 @@ const MaterialControl: React.FC<MaterialControlProps> = ({ project, onUpdateProj
                                 <th className="p-3 text-center">Recv</th>
                                 <th className="p-3 text-center">T.Weight</th>
                                 <th className="p-3 text-center">Bal</th>
+                                <th className="p-3 text-center">Acc.</th>
+                                <th className="p-3 text-center">Acc. Date</th>
+                                <th className="p-3 text-center">Maturity</th>
                                 <th className="p-3 text-center">Quality</th>
                             </tr>
                         </thead>
@@ -661,6 +706,9 @@ const MaterialControl: React.FC<MaterialControlProps> = ({ project, onUpdateProj
                                     <td className="p-3 text-center font-bold">{item.receivedQty}</td>
                                     <td className="p-3 text-center font-bold text-indigo-600">{item.totalWeight}kg</td>
                                     <td className={`p-3 text-center font-black ${balance > 0 ? 'text-orange-500' : 'text-green-600'}`}>{balance}</td>
+                                    <td className="p-3 text-center font-bold">{item.acceptance || '-'}</td>
+                                    <td className="p-3 text-center">{item.acceptanceDate || '-'}</td>
+                                    <td className="p-3 text-center">{item.maturityDate || '-'}</td>
                                     <td className={`p-3 text-center font-black ${item.actualQuality !== item.receivedQuality ? 'text-red-600' : 'text-gray-500'}`}>{item.actualQuality || 'N/A'}</td>
                                 </tr>
                             )})}
