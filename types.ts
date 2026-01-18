@@ -1,26 +1,3 @@
-export interface UserPermissions {
-  // List Management
-  viewAll: boolean;
-  viewOwnOnly: boolean;
-  create: boolean;
-  editDraftRejected: boolean;
-  editAll: boolean;
-  delete: boolean;
-  submit: boolean;
-  approveReject: boolean;
-
-  // User Management
-  viewUsers: boolean;
-  createUsers: boolean;
-  editUsers: boolean;
-  deleteUsers: boolean;
-  assignRoles: boolean;
-
-  // System
-  systemSettings: boolean;
-  changeParameters: boolean;
-  viewAuditLogs: boolean;
-}
 
 export interface Measurement {
   id: string;
@@ -72,40 +49,14 @@ export interface TechPackData {
   images: TechPackImage[];
 }
 
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'USER' | 'supplier' | 'factory';
+export type UserRole = 'buyer' | 'supplier';
 
-export interface AuthUser {
-  id: string;
-  email: string;
-  role: UserRole;
-  name: string;
-  permissions: UserPermissions; // Added granular permissions
-}
-
-export interface SystemUser extends AuthUser {
-  status: 'ACTIVE' | 'INACTIVE';
-  lastLogin: string;
-  createdAt: string;
-  password?: string; // Added password field for stored users
-}
-
-export interface AuditLog {
-  id: string;
-  userId: string;
-  userName: string;
-  userEmail: string;
-  action: string;
-  details: string;
-  timestamp: string;
-  ipAddress?: string;
-}
-
-export type ProjectStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+export type ProjectStatus = 'DRAFT' | 'SUBMITTED' | 'CHANGES_REQUESTED' | 'APPROVED' | 'REJECTED' | 'PENDING' | 'ACCEPTED';
 
 export interface Comment {
   id: string;
   author: string;
-  role: string;
+  role: UserRole;
   text: string;
   timestamp: string;
 }
@@ -386,9 +337,6 @@ export interface MaterialControlItem {
   receivedQuality: string;
   remark: string;
   attachments: MaterialAttachment[];
-  acceptance?: 'Yes' | 'No' | '';
-  acceptanceDate?: string;
-  maturityDate?: string;
 }
 
 export interface UploadedTechPack {
@@ -412,12 +360,6 @@ export interface ColorSizeRow {
   xl: number;
   xxl: number;
   total: number;
-}
-
-export interface OrderBreakdown {
-  id: string;
-  poNumber: string;
-  sizeRows: ColorSizeRow[];
 }
 
 export interface POAccessories {
@@ -465,7 +407,7 @@ export interface OrderSheet {
   sizeRatio: string;
   unitPrice: number;
   productImageUrl: string;
-  breakdowns: OrderBreakdown[];
+  sizeRows: ColorSizeRow[];
   accessories: POAccessories;
   remarks: string[];
 }
@@ -475,9 +417,6 @@ export interface Project {
   title: string;
   poNumbers: PONumber[];
   updatedAt: string;
-  createdAt: string;
-  createdBy: string;
-  creatorName: string;
   status: ProjectStatus;
   techPackFiles: UploadedTechPack[];
   pages: TechPackData[]; 
