@@ -1,4 +1,3 @@
-
 export interface UserPermissions {
   // List Management
   viewAll: boolean;
@@ -73,7 +72,7 @@ export interface TechPackData {
   images: TechPackImage[];
 }
 
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'USER';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'USER' | 'supplier' | 'factory';
 
 export interface AuthUser {
   id: string;
