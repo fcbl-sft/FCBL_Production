@@ -1,8 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Project, OrderSheet, ColorSizeRow, POAccessories } from '../types';
-// Add missing icons: Package, LayoutPanelTop, Box, CheckSquare
-import { ArrowLeft, Save, Printer, FileDown, Plus, Trash2, Building2, ShoppingCart, Truck, MapPin, CheckCircle2, Eye, Edit3, X, Image as ImageIcon, RotateCcw, Download, Package, LayoutPanelTop, Box, CheckSquare } from 'lucide-react';
+import { Project, OrderSheet, OrderBreakdown, ColorSizeRow, POAccessories } from '../types';
+import { ArrowLeft, Save, Printer, FileDown, Plus, Trash2, Building2, ShoppingCart, Truck, MapPin, CheckCircle2, Eye, Edit3, X, Image as ImageIcon, RotateCcw, Download, Package, LayoutPanelTop, Box, CheckSquare, Layers } from 'lucide-react';
 
 // For PDF generation
 declare var html2pdf: any;
@@ -51,8 +50,14 @@ const INITIAL_PO: OrderSheet = {
   sizeRatio: '2:3:3:2:1',
   unitPrice: 17.00,
   productImageUrl: '',
-  sizeRows: [
-    { id: '1', colorCode: 'BLACK / 900', s: 12, m: 18, l: 18, xl: 12, xxl: 6, total: 66 }
+  breakdowns: [
+    {
+      id: 'breakdown-1',
+      poNumber: 'FC-US-2025-001',
+      sizeRows: [
+        { id: '1', colorCode: 'BLACK / 900', s: 12, m: 18, l: 18, xl: 12, xxl: 6, total: 66 }
+      ]
+    }
   ],
   accessories: {
     mainLabel: '1 pc per garment',
@@ -72,21 +77,48 @@ const INITIAL_PO: OrderSheet = {
 
 const OrderSheetEditor: React.FC<OrderSheetEditorProps> = ({ project, onUpdate, onBack, onSave }) => {
   const [viewMode, setViewMode] = useState<'EDIT' | 'PREVIEW'>('EDIT');
-  const [formData, setFormData] = useState<OrderSheet>(project.orderSheet || INITIAL_PO);
+  const [formData, setFormData] = useState<OrderSheet>(() => {
+    const existing = project.orderSheet;
+    if (!existing) return INITIAL_PO;
+    
+    // Migration logic for old data format
+    if (!existing.breakdowns && (existing as any).sizeRows) {
+      return {
+        ...existing,
+        breakdowns: [
+          {
+            id: 'legacy-breakdown',
+            poNumber: existing.poNumber || 'Legacy',
+            sizeRows: (existing as any).sizeRows
+          }
+        ]
+      };
+    }
+    
+    return existing;
+  });
+
   const [showSaveToast, setShowSaveToast] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const totals = useMemo(() => {
-    const sTotal = formData.sizeRows.reduce((acc, row) => acc + (Number(row.s) || 0), 0);
-    const mTotal = formData.sizeRows.reduce((acc, row) => acc + (Number(row.m) || 0), 0);
-    const lTotal = formData.sizeRows.reduce((acc, row) => acc + (Number(row.l) || 0), 0);
-    const xlTotal = formData.sizeRows.reduce((acc, row) => acc + (Number(row.xl) || 0), 0);
-    const xxlTotal = formData.sizeRows.reduce((acc, row) => acc + (Number(row.xxl) || 0), 0);
-    const qtyTotal = formData.sizeRows.reduce((acc, row) => acc + (Number(row.total) || 0), 0);
+    let sTotal = 0, mTotal = 0, lTotal = 0, xlTotal = 0, xxlTotal = 0, qtyTotal = 0;
+
+    (formData.breakdowns || []).forEach(breakdown => {
+      (breakdown.sizeRows || []).forEach(row => {
+        sTotal += (Number(row.s) || 0);
+        mTotal += (Number(row.m) || 0);
+        lTotal += (Number(row.l) || 0);
+        xlTotal += (Number(row.xl) || 0);
+        xxlTotal += (Number(row.xxl) || 0);
+        qtyTotal += (Number(row.total) || 0);
+      });
+    });
+
     const amountTotal = qtyTotal * (formData.unitPrice || 0);
 
     return { sTotal, mTotal, lTotal, xlTotal, xxlTotal, qtyTotal, amountTotal };
-  }, [formData]);
+  }, [formData.breakdowns, formData.unitPrice]);
 
   const updateField = (field: keyof OrderSheet, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -96,27 +128,68 @@ const OrderSheetEditor: React.FC<OrderSheetEditorProps> = ({ project, onUpdate, 
     setFormData(prev => ({ ...prev, accessories: { ...prev.accessories, [field]: value } }));
   };
 
-  const addSizeRow = () => {
-    const newRow: ColorSizeRow = { id: Date.now().toString(), colorCode: '', s: 0, m: 0, l: 0, xl: 0, xxl: 0, total: 0 };
-    updateField('sizeRows', [...formData.sizeRows, newRow]);
+  // MULTI-BREAKDOWN LOGIC
+  const addBreakdownTable = () => {
+    const newBreakdown: OrderBreakdown = {
+      id: `breakdown-${Date.now()}`,
+      poNumber: project.poNumbers?.[formData.breakdowns.length]?.number || project.poNumbers?.[0]?.number || 'New PO',
+      sizeRows: [
+        { id: `row-${Date.now()}`, colorCode: '', s: 0, m: 0, l: 0, xl: 0, xxl: 0, total: 0 }
+      ]
+    };
+    updateField('breakdowns', [...formData.breakdowns, newBreakdown]);
   };
 
-  const updateSizeRow = (id: string, field: keyof ColorSizeRow, value: any) => {
-    const updated = formData.sizeRows.map(row => {
-      if (row.id === id) {
-        const newRow = { ...row, [field]: value };
-        if (['s', 'm', 'l', 'xl', 'xxl'].includes(field as string)) {
-          newRow.total = (Number(newRow.s) || 0) + (Number(newRow.m) || 0) + (Number(newRow.l) || 0) + (Number(newRow.xl) || 0) + (Number(newRow.xxl) || 0);
-        }
-        return newRow;
+  const deleteBreakdownTable = (id: string) => {
+    if (formData.breakdowns.length <= 1) return alert("At least one breakdown table is required.");
+    if (confirm("Permanently remove this breakdown table?")) {
+      updateField('breakdowns', formData.breakdowns.filter(b => b.id !== id));
+    }
+  };
+
+  const updateBreakdownPO = (id: string, poNumber: string) => {
+    updateField('breakdowns', formData.breakdowns.map(b => b.id === id ? { ...b, poNumber } : b));
+  };
+
+  const addSizeRow = (breakdownId: string) => {
+    const updatedBreakdowns = formData.breakdowns.map(b => {
+      if (b.id === breakdownId) {
+        const newRow: ColorSizeRow = { id: `row-${Date.now()}`, colorCode: '', s: 0, m: 0, l: 0, xl: 0, xxl: 0, total: 0 };
+        return { ...b, sizeRows: [...b.sizeRows, newRow] };
       }
-      return row;
+      return b;
     });
-    updateField('sizeRows', updated);
+    updateField('breakdowns', updatedBreakdowns);
   };
 
-  const deleteSizeRow = (id: string) => {
-    updateField('sizeRows', formData.sizeRows.filter(r => r.id !== id));
+  const updateSizeRow = (breakdownId: string, rowId: string, field: keyof ColorSizeRow, value: any) => {
+    const updatedBreakdowns = formData.breakdowns.map(b => {
+      if (b.id === breakdownId) {
+        const updatedRows = b.sizeRows.map(row => {
+          if (row.id === rowId) {
+            const newRow = { ...row, [field]: value };
+            if (['s', 'm', 'l', 'xl', 'xxl'].includes(field as string)) {
+              newRow.total = (Number(newRow.s) || 0) + (Number(newRow.m) || 0) + (Number(newRow.l) || 0) + (Number(newRow.xl) || 0) + (Number(newRow.xxl) || 0);
+            }
+            return newRow;
+          }
+          return row;
+        });
+        return { ...b, sizeRows: updatedRows };
+      }
+      return b;
+    });
+    updateField('breakdowns', updatedBreakdowns);
+  };
+
+  const deleteSizeRow = (breakdownId: string, rowId: string) => {
+    const updatedBreakdowns = formData.breakdowns.map(b => {
+      if (b.id === breakdownId) {
+        return { ...b, sizeRows: b.sizeRows.filter(r => r.id !== rowId) };
+      }
+      return b;
+    });
+    updateField('breakdowns', updatedBreakdowns);
   };
 
   const addRemark = () => {
@@ -222,7 +295,7 @@ const OrderSheetEditor: React.FC<OrderSheetEditorProps> = ({ project, onUpdate, 
             {/* COMPANY & HEADER INFO */}
             <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                <div className="lg:col-span-2"><label className={sectionLabel}>Company Name</label><input className={inputClass} value={formData.companyName} onChange={e => updateField('companyName', e.target.value)} /></div>
-               <div><label className={sectionLabel}>PO Number</label><input className={`${inputClass} border-indigo-300 bg-indigo-50`} value={formData.poNumber} onChange={e => updateField('poNumber', e.target.value)} /></div>
+               <div><label className={sectionLabel}>Main PO Number</label><input className={`${inputClass} border-indigo-300 bg-indigo-50`} value={formData.poNumber} onChange={e => updateField('poNumber', e.target.value)} /></div>
                <div className="lg:col-span-2"><label className={sectionLabel}>Company Address</label><input className={inputClass} value={formData.companyAddress} onChange={e => updateField('companyAddress', e.target.value)} /></div>
                <div className="flex gap-4">
                   <div className="flex-1"><label className={sectionLabel}>Email 1</label><input className={inputClass} value={formData.companyEmail1} onChange={e => updateField('companyEmail1', e.target.value)} /></div>
@@ -335,66 +408,107 @@ const OrderSheetEditor: React.FC<OrderSheetEditorProps> = ({ project, onUpdate, 
                 </div>
             </div>
 
-            {/* COLOR & SIZE BREAKDOWN */}
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
-                <div className="flex justify-between items-center mb-8 pb-4 border-b border-slate-100">
-                   <div className="flex items-center gap-3 text-indigo-600">
-                      <LayoutPanelTop className="w-5 h-5" /><h3 className="font-black text-xs uppercase tracking-widest">Order Breakdown Table</h3>
-                   </div>
-                   <button onClick={addSizeRow} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition-all"><Plus className="w-3.5 h-3.5" /> Add Color Row</button>
+            {/* COLOR & SIZE BREAKDOWN - MULTIPLE TABLES SUPPORT */}
+            <div className="space-y-12">
+                <div className="flex justify-between items-center no-print">
+                   <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase flex items-center gap-3">
+                     <Layers className="w-6 h-6 text-indigo-600" />
+                     Purchase Order Breakdown Tables
+                   </h2>
+                   <button 
+                     onClick={addBreakdownTable}
+                     className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all active:scale-95 shadow-indigo-100"
+                   >
+                     <Plus className="w-4 h-4" /> Add New Table
+                   </button>
                 </div>
-                <div className="overflow-x-auto rounded-3xl border border-slate-100">
-                    <table className="w-full border-collapse">
-                        <thead className="bg-slate-900 text-white">
-                            <tr className="text-[10px] font-black uppercase tracking-widest">
-                                <th className="p-4 text-left">Color / Code</th>
-                                <th className="p-4 text-center">S</th>
-                                <th className="p-4 text-center">M</th>
-                                <th className="p-4 text-center">L</th>
-                                <th className="p-4 text-center">XL</th>
-                                <th className="p-4 text-center">XXL</th>
-                                <th className="p-4 text-center bg-indigo-800">QTY</th>
-                                <th className="p-4 w-12"></th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {formData.sizeRows.map(row => (
-                                <tr key={row.id} className="hover:bg-slate-50 transition-colors">
-                                    <td className="p-2"><input className="w-full bg-[#DFEDF7] border-none rounded-lg p-2 text-xs font-bold" value={row.colorCode} onChange={e => updateSizeRow(row.id, 'colorCode', e.target.value)} /></td>
-                                    <td className="p-2"><input type="number" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-center font-bold" value={row.s || ''} onChange={e => updateSizeRow(row.id, 's', parseInt(e.target.value) || 0)} /></td>
-                                    <td className="p-2"><input type="number" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-center font-bold" value={row.m || ''} onChange={e => updateSizeRow(row.id, 'm', parseInt(e.target.value) || 0)} /></td>
-                                    <td className="p-2"><input type="number" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-center font-bold" value={row.l || ''} onChange={e => updateSizeRow(row.id, 'l', parseInt(e.target.value) || 0)} /></td>
-                                    <td className="p-2"><input type="number" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-center font-bold" value={row.xl || ''} onChange={e => updateSizeRow(row.id, 'xl', parseInt(e.target.value) || 0)} /></td>
-                                    <td className="p-2"><input type="number" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-center font-bold" value={row.xxl || ''} onChange={e => updateSizeRow(row.id, 'xxl', parseInt(e.target.value) || 0)} /></td>
-                                    <td className="p-4 text-center font-black text-indigo-700 bg-indigo-50/50">{row.total}</td>
-                                    <td className="p-2 text-center"><button onClick={() => deleteSizeRow(row.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                        <tfoot className="bg-slate-100 border-t-2 border-slate-900 font-black text-[10px] uppercase">
-                            <tr>
-                                <td className="p-4 text-right pr-6">Size Totals:</td>
-                                <td className="p-4 text-center">{totals.sTotal}</td>
-                                <td className="p-4 text-center">{totals.mTotal}</td>
-                                <td className="p-4 text-center">{totals.lTotal}</td>
-                                <td className="p-4 text-center">{totals.xlTotal}</td>
-                                <td className="p-4 text-center">{totals.xxlTotal}</td>
-                                <td className="p-4 text-center text-sm text-indigo-800">{totals.qtyTotal}</td>
-                                <td></td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-                <div className="mt-8 flex justify-end">
-                    <div className="bg-indigo-600 text-white p-6 rounded-3xl shadow-xl shadow-indigo-100 flex items-center gap-12">
+
+                {(formData.breakdowns || []).map((breakdown, bIdx) => (
+                  <div key={breakdown.id} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 animate-in slide-in-from-bottom-4 duration-500 relative">
+                      <button 
+                        onClick={() => deleteBreakdownTable(breakdown.id)}
+                        className="absolute -top-3 -right-3 p-3 bg-red-600 text-white rounded-2xl shadow-lg hover:bg-red-700 transition-all z-10 opacity-0 group-hover:opacity-100 hover:scale-110 group"
+                        title="Delete this table"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <div className="group">
+                        <div className="flex justify-between items-center mb-8 pb-4 border-b border-slate-100">
+                           <div className="flex items-center gap-4 flex-1 max-w-sm">
+                              <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl"><LayoutPanelTop className="w-5 h-5" /></div>
+                              <div className="w-full">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Breakdown for PO#</label>
+                                <input 
+                                  className="w-full bg-[#DFEDF7] border-none rounded-lg p-2 text-xs font-black uppercase tracking-tight focus:bg-white transition-all outline-none" 
+                                  value={breakdown.poNumber} 
+                                  onChange={e => updateBreakdownPO(breakdown.id, e.target.value)} 
+                                  placeholder="Enter PO Number..."
+                                />
+                              </div>
+                           </div>
+                           <div className="flex gap-3 items-center">
+                              <span className="text-[10px] font-black text-slate-400 bg-slate-50 px-3 py-1.5 rounded-lg uppercase tracking-widest">Table #{bIdx + 1}</span>
+                              <button onClick={() => addSizeRow(breakdown.id)} className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-black transition-all shadow-md"><Plus className="w-3.5 h-3.5" /> Add Row</button>
+                              <button onClick={() => deleteBreakdownTable(breakdown.id)} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4"/></button>
+                           </div>
+                        </div>
+
+                        <div className="overflow-x-auto rounded-3xl border border-slate-100">
+                            <table className="w-full border-collapse">
+                                <thead className="bg-slate-900 text-white">
+                                    <tr className="text-[10px] font-black uppercase tracking-widest">
+                                        <th className="p-4 text-left">Color / Code</th>
+                                        <th className="p-4 text-center">S</th>
+                                        <th className="p-4 text-center">M</th>
+                                        <th className="p-4 text-center">L</th>
+                                        <th className="p-4 text-center">XL</th>
+                                        <th className="p-4 text-center">XXL</th>
+                                        <th className="p-4 text-center bg-indigo-800">QTY</th>
+                                        <th className="p-4 w-12"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {(breakdown.sizeRows || []).map(row => (
+                                        <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                                            <td className="p-2"><input className="w-full bg-[#DFEDF7] border-none rounded-lg p-2 text-xs font-bold" value={row.colorCode} onChange={e => updateSizeRow(breakdown.id, row.id, 'colorCode', e.target.value)} /></td>
+                                            <td className="p-2"><input type="number" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-center font-bold" value={row.s || ''} onChange={e => updateSizeRow(breakdown.id, row.id, 's', parseInt(e.target.value) || 0)} /></td>
+                                            <td className="p-2"><input type="number" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-center font-bold" value={row.m || ''} onChange={e => updateSizeRow(breakdown.id, row.id, 'm', parseInt(e.target.value) || 0)} /></td>
+                                            <td className="p-2"><input type="number" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-center font-bold" value={row.l || ''} onChange={e => updateSizeRow(breakdown.id, row.id, 'l', parseInt(e.target.value) || 0)} /></td>
+                                            <td className="p-2"><input type="number" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-center font-bold" value={row.xl || ''} onChange={e => updateSizeRow(breakdown.id, row.id, 'xl', parseInt(e.target.value) || 0)} /></td>
+                                            <td className="p-2"><input type="number" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-center font-bold" value={row.xxl || ''} onChange={e => updateSizeRow(breakdown.id, row.id, 'xxl', parseInt(e.target.value) || 0)} /></td>
+                                            <td className="p-4 text-center font-black text-indigo-700 bg-indigo-50/50">{row.total}</td>
+                                            <td className="p-2 text-center"><button onClick={() => deleteSizeRow(breakdown.id, row.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot className="bg-slate-100 border-t-2 border-slate-900 font-black text-[10px] uppercase">
+                                    <tr>
+                                        <td className="p-4 text-right pr-6">Table Sub-Totals:</td>
+                                        <td className="p-4 text-center">{breakdown.sizeRows.reduce((a, c) => a + (Number(c.s) || 0), 0)}</td>
+                                        <td className="p-4 text-center">{breakdown.sizeRows.reduce((a, c) => a + (Number(c.m) || 0), 0)}</td>
+                                        <td className="p-4 text-center">{breakdown.sizeRows.reduce((a, c) => a + (Number(c.l) || 0), 0)}</td>
+                                        <td className="p-4 text-center">{breakdown.sizeRows.reduce((a, c) => a + (Number(c.xl) || 0), 0)}</td>
+                                        <td className="p-4 text-center">{breakdown.sizeRows.reduce((a, c) => a + (Number(c.xxl) || 0), 0)}</td>
+                                        <td className="p-4 text-center text-sm text-indigo-800">{breakdown.sizeRows.reduce((a, c) => a + (Number(c.total) || 0), 0)}</td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                      </div>
+                  </div>
+                ))}
+
+                <div className="flex justify-end no-print">
+                    <div className="bg-indigo-600 text-white p-6 rounded-[2.5rem] shadow-2xl shadow-indigo-100 flex items-center gap-12 border-4 border-white">
                         <div>
-                           <span className="text-[10px] font-black uppercase opacity-60 tracking-widest block mb-1">Total Order Quantity</span>
-                           <span className="text-3xl font-black">{totals.qtyTotal.toLocaleString()} PCS</span>
+                           <span className="text-[10px] font-black uppercase opacity-60 tracking-[0.2em] block mb-1">Grand Total Order Qty</span>
+                           <span className="text-4xl font-black">{totals.qtyTotal.toLocaleString()} PCS</span>
                         </div>
                         <div className="w-px h-12 bg-white/20"></div>
                         <div>
-                           <span className="text-[10px] font-black uppercase opacity-60 tracking-widest block mb-1">Estimated Total Value</span>
-                           <span className="text-3xl font-black">${totals.amountTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {formData.currency}</span>
+                           <span className="text-[10px] font-black uppercase opacity-60 tracking-[0.2em] block mb-1">Consolidated PO Value</span>
+                           <span className="text-4xl font-black">${totals.amountTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {formData.currency}</span>
                         </div>
                     </div>
                 </div>
@@ -456,7 +570,7 @@ const OrderSheetEditor: React.FC<OrderSheetEditorProps> = ({ project, onUpdate, 
                     <div className="text-right">
                         <h1 className="text-5xl font-black tracking-tighter text-indigo-600 uppercase leading-none mb-4">Purchase Order</h1>
                         <div className="inline-block border-2 border-slate-900 px-6 py-2 rounded-lg">
-                           <span className="text-[10px] font-black uppercase text-slate-400 block tracking-widest text-center mb-1">PO Number</span>
+                           <span className="text-[10px] font-black uppercase text-slate-400 block tracking-widest text-center mb-1">Master PO#</span>
                            <span className="text-xl font-black">{formData.poNumber}</span>
                         </div>
                     </div>
@@ -501,78 +615,102 @@ const OrderSheetEditor: React.FC<OrderSheetEditorProps> = ({ project, onUpdate, 
                     <div className="p-2 border-t border-slate-200"><span className="text-[8px] font-black uppercase text-slate-400 block mb-0.5">HS Code</span><span className="text-[10px] font-black">{formData.hsCode}</span></div>
                     <div className="p-2 border-t border-slate-200"><span className="text-[8px] font-black uppercase text-slate-400 block mb-0.5">RN Number</span><span className="text-[10px] font-black">{formData.rnNumber}</span></div>
                     <div className="p-2 border-t border-slate-200"><span className="text-[8px] font-black uppercase text-slate-400 block mb-0.5">Ex-Factory Date</span><span className="text-[10px] font-black">{formatDate(formData.exFactoryDate)}</span></div>
-                    <div className="p-2 border-t border-slate-200 bg-indigo-50"><span className="text-[8px] font-black uppercase text-indigo-400 block mb-0.5">Total Quantity</span><span className="text-[11px] font-black">{totals.qtyTotal.toLocaleString()} PCS</span></div>
+                    <div className="p-2 border-t border-slate-200 bg-indigo-50"><span className="text-[8px] font-black uppercase text-indigo-400 block mb-0.5">Grand Total Qty</span><span className="text-[11px] font-black">{totals.qtyTotal.toLocaleString()} PCS</span></div>
                 </div>
 
                 {/* PRODUCT BOX */}
-                <div className="flex border border-slate-900 mb-6 h-[50mm] rounded-xl overflow-hidden">
+                <div className="flex border border-slate-900 mb-8 h-[45mm] rounded-xl overflow-hidden">
                     <div className="flex-1 p-6 border-r border-slate-900">
-                        <div className="grid grid-cols-2 gap-y-4 gap-x-8">
-                            <div><span className="text-[9px] font-black uppercase text-slate-400 block">Style Name</span><span className="text-[14px] font-black uppercase">{formData.styleName}</span></div>
-                            <div><span className="text-[9px] font-black uppercase text-slate-400 block">Style Code</span><span className="text-[14px] font-black uppercase">{formData.styleCode}</span></div>
+                        <div className="grid grid-cols-2 gap-y-3 gap-x-8">
+                            <div><span className="text-[9px] font-black uppercase text-slate-400 block">Style Name</span><span className="text-[13px] font-black uppercase">{formData.styleName}</span></div>
+                            <div><span className="text-[9px] font-black uppercase text-slate-400 block">Style Code</span><span className="text-[13px] font-black uppercase">{formData.styleCode}</span></div>
                             <div className="col-span-2 grid grid-cols-3 gap-2">
-                                <div><span className="text-[8px] font-black uppercase text-slate-400 block">Composition</span><span className="text-[10px] font-bold uppercase">{formData.composition}</span></div>
-                                <div><span className="text-[8px] font-black uppercase text-slate-400 block">Weight</span><span className="text-[10px] font-bold uppercase">{formData.fabricWeight}</span></div>
-                                <div><span className="text-[8px] font-black uppercase text-slate-400 block">Gauge</span><span className="text-[10px] font-bold uppercase">{formData.gauge}</span></div>
+                                <div><span className="text-[8px] font-black uppercase text-slate-400 block">Composition</span><span className="text-[9px] font-bold uppercase">{formData.composition}</span></div>
+                                <div><span className="text-[8px] font-black uppercase text-slate-400 block">Weight</span><span className="text-[9px] font-bold uppercase">{formData.fabricWeight}</span></div>
+                                <div><span className="text-[8px] font-black uppercase text-slate-400 block">Gauge</span><span className="text-[9px] font-bold uppercase">{formData.gauge}</span></div>
                             </div>
                         </div>
-                        <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-center gap-6 bg-slate-50 rounded-lg p-2">
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-center gap-6 bg-slate-50 rounded-lg p-2">
                            <span className="text-[10px] font-black uppercase text-slate-400">Size Ratio:</span>
-                           <span className="text-[16px] font-black tracking-widest text-indigo-600">{formData.sizeRatio}</span>
+                           <span className="text-[14px] font-black tracking-widest text-indigo-600">{formData.sizeRatio}</span>
                         </div>
                     </div>
-                    <div className="w-[60mm] bg-white flex items-center justify-center p-4">
+                    <div className="w-[50mm] bg-white flex items-center justify-center p-4">
                         {formData.productImageUrl ? <img src={formData.productImageUrl} className="max-h-full max-w-full object-contain" /> : <div className="text-[10px] font-black uppercase text-slate-200">No Image</div>}
                     </div>
                 </div>
 
-                {/* SIZE TABLE */}
-                <table className="w-full border-2 border-slate-900 border-collapse mb-8 text-[11px]">
-                    <thead className="bg-slate-900 text-white font-black uppercase text-center border-b-2 border-slate-900">
-                        <tr>
-                            <th className="p-3 border-r border-white/20 text-left">Color Description / Code</th>
-                            <th className="p-3 border-r border-white/20 w-12">S</th>
-                            <th className="p-3 border-r border-white/20 w-12">M</th>
-                            <th className="p-3 border-r border-white/20 w-12">L</th>
-                            <th className="p-3 border-r border-white/20 w-12">XL</th>
-                            <th className="p-3 border-r border-white/20 w-12">XXL</th>
-                            <th className="p-3 border-r border-white/20 w-24">QTY</th>
-                            <th className="p-3 border-r border-white/20 w-20">PRICE</th>
-                            <th className="p-3 w-32">AMOUNT</th>
-                        </tr>
-                    </thead>
-                    <tbody className="text-center font-bold">
-                        {formData.sizeRows.map((row, idx) => (
-                            <tr key={idx} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} border-b border-slate-200`}>
-                                <td className="p-3 border-r border-slate-200 text-left font-black uppercase">{row.colorCode}</td>
-                                <td className="p-3 border-r border-slate-200">{row.s}</td>
-                                <td className="p-3 border-r border-slate-200">{row.m}</td>
-                                <td className="p-3 border-r border-slate-200">{row.l}</td>
-                                <td className="p-3 border-r border-slate-200">{row.xl}</td>
-                                <td className="p-3 border-r border-slate-200">{row.xxl}</td>
-                                <td className="p-3 border-r border-slate-200 font-black">{row.total}</td>
-                                <td className="p-3 border-r border-slate-200">${(formData.unitPrice || 0).toFixed(2)}</td>
-                                <td className="p-3 font-black bg-indigo-50">${(row.total * (formData.unitPrice || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                    <tfoot className="bg-slate-100 border-t-2 border-slate-900 font-black uppercase text-center">
-                        <tr>
-                            <td className="p-3 text-right pr-6 uppercase tracking-widest border-r border-slate-900">Order Totals:</td>
-                            <td className="p-3 border-r border-slate-200">{totals.sTotal}</td>
-                            <td className="p-3 border-r border-slate-200">{totals.mTotal}</td>
-                            <td className="p-3 border-r border-slate-200">{totals.lTotal}</td>
-                            <td className="p-3 border-r border-slate-200">{totals.xlTotal}</td>
-                            <td className="p-3 border-r border-slate-200">{totals.xxlTotal}</td>
-                            <td className="p-3 border-r border-slate-200 text-indigo-700">{totals.qtyTotal.toLocaleString()} PCS</td>
-                            <td className="border-r border-slate-200"></td>
-                            <td className="p-3 bg-indigo-600 text-white text-base">${totals.amountTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                        </tr>
-                    </tfoot>
-                </table>
+                {/* SIZE TABLES - PREVIEW */}
+                <div className="space-y-10 mb-10">
+                   {(formData.breakdowns || []).map((breakdown, idx) => (
+                      <div key={breakdown.id} className="page-break-inside-avoid">
+                         <div className="flex justify-between items-end mb-2">
+                            <h3 className="text-xs font-black uppercase tracking-tighter border-l-4 border-indigo-600 pl-2">Order Breakdown Table #{idx+1} <span className="ml-4 text-indigo-600">PO# {breakdown.poNumber}</span></h3>
+                         </div>
+                         <table className="w-full border-2 border-slate-900 border-collapse text-[10px]">
+                            <thead className="bg-slate-100 font-black uppercase text-center border-b-2 border-slate-900">
+                                <tr>
+                                    <th className="p-2 border-r border-slate-300 text-left">Color Description / Code</th>
+                                    <th className="p-2 border-r border-slate-300 w-10">S</th>
+                                    <th className="p-2 border-r border-slate-300 w-10">M</th>
+                                    <th className="p-2 border-r border-slate-300 w-10">L</th>
+                                    <th className="p-2 border-r border-slate-300 w-10">XL</th>
+                                    <th className="p-2 border-r border-slate-300 w-10">XXL</th>
+                                    <th className="p-2 border-r border-slate-300 w-20">QTY</th>
+                                    <th className="p-2 border-r border-slate-300 w-16">PRICE</th>
+                                    <th className="p-2 w-28">AMOUNT</th>
+                                </tr>
+                            </thead>
+                            <tbody className="text-center font-bold">
+                                {breakdown.sizeRows.map((row, rIdx) => (
+                                    <tr key={rIdx} className={`${rIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} border-b border-slate-200`}>
+                                        <td className="p-2 border-r border-slate-200 text-left font-black uppercase">{row.colorCode}</td>
+                                        <td className="p-2 border-r border-slate-200">{row.s}</td>
+                                        <td className="p-2 border-r border-slate-200">{row.m}</td>
+                                        <td className="p-2 border-r border-slate-200">{row.l}</td>
+                                        <td className="p-2 border-r border-slate-200">{row.xl}</td>
+                                        <td className="p-2 border-r border-slate-200">{row.xxl}</td>
+                                        <td className="p-2 border-r border-slate-200 font-black">{row.total}</td>
+                                        <td className="p-2 border-r border-slate-200 font-mono">${(formData.unitPrice || 0).toFixed(2)}</td>
+                                        <td className="p-2 font-black bg-indigo-50 font-mono">${(row.total * (formData.unitPrice || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot className="bg-slate-200 border-t-2 border-slate-900 font-black uppercase text-center text-[9px]">
+                                <tr>
+                                    <td className="p-2 text-right pr-4 uppercase tracking-widest border-r border-slate-900">Table Sub-Totals:</td>
+                                    <td className="p-2 border-r border-slate-300">{breakdown.sizeRows.reduce((a, c) => a + (Number(c.s) || 0), 0)}</td>
+                                    <td className="p-2 border-r border-slate-300">{breakdown.sizeRows.reduce((a, c) => a + (Number(c.m) || 0), 0)}</td>
+                                    <td className="p-2 border-r border-slate-300">{breakdown.sizeRows.reduce((a, c) => a + (Number(c.l) || 0), 0)}</td>
+                                    <td className="p-2 border-r border-slate-300">{breakdown.sizeRows.reduce((a, c) => a + (Number(c.xl) || 0), 0)}</td>
+                                    <td className="p-2 border-r border-slate-300">{breakdown.sizeRows.reduce((a, c) => a + (Number(c.xxl) || 0), 0)}</td>
+                                    <td className="p-2 border-r border-slate-300 text-indigo-700">{breakdown.sizeRows.reduce((a, c) => a + (Number(c.total) || 0), 0)} PCS</td>
+                                    <td className="border-r border-slate-300"></td>
+                                    <td className="p-2 font-mono text-indigo-800">${breakdown.sizeRows.reduce((a, c) => a + (Number(c.total) * (formData.unitPrice || 0)), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                </tr>
+                            </tfoot>
+                         </table>
+                      </div>
+                   ))}
+                </div>
+
+                {/* GRAND TOTAL SUMMARY */}
+                <div className="flex justify-end mb-10 page-break-inside-avoid">
+                   <div className="bg-slate-900 text-white p-5 rounded-xl flex items-center gap-10">
+                      <div className="text-right">
+                         <span className="text-[8px] font-black uppercase opacity-60 block tracking-widest">Grand Total Pieces</span>
+                         <span className="text-xl font-black">{totals.qtyTotal.toLocaleString()} PCS</span>
+                      </div>
+                      <div className="w-px h-8 bg-white/20"></div>
+                      <div className="text-right">
+                         <span className="text-[8px] font-black uppercase opacity-60 block tracking-widest">Grand Total Amount</span>
+                         <span className="text-xl font-black text-indigo-400 font-mono">${totals.amountTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {formData.currency}</span>
+                      </div>
+                   </div>
+                </div>
 
                 {/* ACCESSORIES & REMARKS BOTTOM ROW */}
-                <div className="grid grid-cols-2 gap-8 mb-16">
+                <div className="grid grid-cols-2 gap-8 mb-16 page-break-inside-avoid">
                     <div className="border border-slate-200 rounded-xl overflow-hidden">
                         <div className={`${previewBoxHeader} bg-indigo-600`}>Mandatory Trims & Packing</div>
                         <div className="p-4 space-y-3 text-[10px]">
@@ -596,7 +734,7 @@ const OrderSheetEditor: React.FC<OrderSheetEditorProps> = ({ project, onUpdate, 
                 </div>
 
                 {/* SIGNATURES */}
-                <div className="grid grid-cols-4 gap-4 mt-auto mb-10 text-center">
+                <div className="grid grid-cols-4 gap-4 mt-auto mb-10 text-center page-break-inside-avoid">
                     <div className="border-t-2 border-slate-900 pt-3"><span className="text-[10px] font-black uppercase block leading-none">Merchandiser</span></div>
                     <div className="border-t-2 border-slate-900 pt-3"><span className="text-[10px] font-black uppercase block leading-none">Marketing Director</span></div>
                     <div className="border-t-2 border-slate-900 pt-3"><span className="text-[10px] font-black uppercase block leading-none">Operation Director</span></div>
@@ -606,7 +744,7 @@ const OrderSheetEditor: React.FC<OrderSheetEditorProps> = ({ project, onUpdate, 
                 {/* FOOTER */}
                 <div className="absolute bottom-6 left-[15mm] right-[15mm] border-t border-slate-100 pt-4 flex justify-between items-center text-[9px] font-black text-slate-300 tracking-widest uppercase no-print">
                    <span>Page 1 of 1</span>
-                   <span>Automated Order Sheet - {formData.poNumber}</span>
+                   <span>Automated Order Sheet - Multi Breakdown v2</span>
                    <span>Fashion Comfort industrial Systems</span>
                 </div>
              </div>
@@ -619,6 +757,7 @@ const OrderSheetEditor: React.FC<OrderSheetEditorProps> = ({ project, onUpdate, 
             aside, header, footer, .no-print { display: none !important; }
             main { padding: 0 !important; width: 100% !important; background: white !important; overflow: visible !important; }
             #po-preview-document { box-shadow: none !important; margin: 0 !important; border: none !important; width: 100% !important; height: auto !important; position: relative !important; }
+            .page-break-inside-avoid { page-break-inside: avoid; }
         }
       `}</style>
     </div>
