@@ -108,24 +108,24 @@ export interface SectionComment {
 
 export interface QCMeasurementSubColumn {
   id: string;
-  color: string;
-  standardValue: string;
+  color: string; 
+  standardValue: string; 
 }
 
 export interface QCMeasurementGroup {
   id: string;
-  size: string;
-  actualValue: string;
+  size: string; 
+  actualValue: string; 
   subColumns: QCMeasurementSubColumn[];
 }
 
 export interface QCMeasurementRow {
   id: string;
-  point: string;
-  name: string;
+  point: string; 
+  name: string;  
   tolerancePlus: string;
   toleranceMinus: string;
-  groups: { [groupId: string]: QCMeasurementGroup };
+  groups: { [groupId: string]: QCMeasurementGroup }; 
   remarks: string;
 }
 
@@ -200,10 +200,10 @@ export interface InspectionData {
   attachments: AttachmentItem[];
   qcDefects: QCDefectRow[];
   qcSummary: {
-    majorFound: number;
-    maxAllowed: number;
-    criticalMaxAllowed: number;
-    minorMaxAllowed: number;
+      majorFound: number;
+      maxAllowed: number;
+      criticalMaxAllowed: number;
+      minorMaxAllowed: number;
   };
   overallResult: 'ACCEPTED' | 'REJECTED' | 'PENDING';
   judgementComments: string;
@@ -319,12 +319,10 @@ export interface PPMeeting {
   approvals: Approval[];
   approvalRemarks?: string;
   approvalAttachments: FileAttachment[];
-  qcMeasurementTable: QCMeasurementTableData;
-  globalMasterTolerance: string;
   comments?: Comment[];
 }
 
-export interface MaterialAttachment extends FileAttachment { }
+export interface MaterialAttachment extends FileAttachment {}
 
 export interface MaterialControlItem {
   id: string;
@@ -339,15 +337,12 @@ export interface MaterialControlItem {
   receivedQuality: string;
   remark: string;
   attachments: MaterialAttachment[];
-  acceptance: string;
-  acceptanceDate: string;
-  maturityDate: string;
 }
 
 export interface UploadedTechPack {
   id: string;
-  name: string;
-  fileUrl: string;
+  name: string; 
+  fileUrl: string; 
   uploadDate: string;
 }
 
@@ -373,12 +368,6 @@ export interface POAccessories {
   hangTag: string;
   polybag: string;
   carton: string;
-}
-
-export interface OrderBreakdown {
-  id: string;
-  poNumber: string;
-  sizeRows: ColorSizeRow[];
 }
 
 export interface OrderSheet {
@@ -418,8 +407,7 @@ export interface OrderSheet {
   sizeRatio: string;
   unitPrice: number;
   productImageUrl: string;
-  breakdowns: OrderBreakdown[];
-  sizeRows?: ColorSizeRow[];
+  sizeRows: ColorSizeRow[];
   accessories: POAccessories;
   remarks: string[];
 }
@@ -431,12 +419,12 @@ export interface Project {
   updatedAt: string;
   status: ProjectStatus;
   techPackFiles: UploadedTechPack[];
-  pages: TechPackData[];
+  pages: TechPackData[]; 
   comments: Comment[];
   inspections: Inspection[];
   ppMeetings: PPMeeting[];
   materialControl: MaterialControlItem[];
-  invoices: Invoice[];
+  invoices: Invoice[]; 
   packing: PackingInfo;
   orderSheet?: OrderSheet;
   materialRemarks?: string;
